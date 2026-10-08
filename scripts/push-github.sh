@@ -219,6 +219,26 @@ if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
   git branch -M "$BRANCH" 2>/dev/null || git branch -m "$BRANCH" 2>/dev/null || true
 fi
 
+cat <<EOF
+
+--------------------------------------------------------------
+ 下一步要登录 GitHub，它会问你两行，填的东西不一样：
+
+   Username for 'https://...':   填登录用户名（英文那串）
+   Password for 'https://...':   不能填登录密码！要粘「令牌」
+
+   令牌怎么拿（GitHub）：
+     打开 https://github.com/settings/tokens
+     -> Generate new token (classic)
+     -> 勾第一个大项 repo
+     -> 拉到底 Generate token -> 复制 ghp_ 开头那串（只显示一次，先粘记事本）
+
+   ⚠️ 打字时屏幕不显示任何字符，像卡住了 —— 这是正常的，粘完直接回车。
+   ⚠️ 令牌 = 密码。别发给任何人（包括 AI），别写进代码文件。
+--------------------------------------------------------------
+
+EOF
+
 info "推送到 origin/${BRANCH} …"
 if git push -u origin "$BRANCH"; then
   info "推送成功！"
