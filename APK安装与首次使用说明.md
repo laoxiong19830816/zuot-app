@@ -89,8 +89,10 @@ cd /storage/Users/currentUser/WorkBuddy/股票投资/zuot-app/server && sh 启�
 
 | 项目 | 值 |
 |---|---|
-| 邮箱 | `admin@zuot.local` |
-| 密码 | `Zuot@Admin2026`（`server/.env` 里的 `ADMIN_PASSWORD`） |
+| 邮箱 | `admin@zuot.com` |
+| 密码 | `zuot2026` |
+
+（备用邮箱 `admin@zuot.local`，密码一样也能登）
 
 登录后建议到「我的 → 修改密码」改成你自己好记的。
 登录完就能：录持仓 → 记交易 → 手动触发 AI 分析 → 看统计。

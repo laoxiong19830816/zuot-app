@@ -28,6 +28,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   bool _isRegister = false;
   bool _obscure = true;
   bool _showServer = false;
+  bool _testing = false;
 
   @override
   void initState() {
@@ -49,8 +50,44 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } else {
       await notifier.login(email, pwd);
     }
-    final err = ref.read(authProvider).error;
-    if (err != null && mounted) _toast(err);
+    if (!mounted) return;
+    final state = ref.read(authProvider);
+    // 成功也要有反馈：不然点了没反应，用户会以为卡住了
+    if (state.error != null) {
+      _toast(state.error!);
+    } else if (state.success != null) {
+      _toast(state.success!);
+    }
+  }
+
+  /// 测试当前服务器地址能不能连通，把结果弹出来。
+  /// 用户连不上时不用猜，一眼就能看出是「服务没开」「地址错」还是「网络不通」。
+  Future<void> _testConnection() async {
+    setState(() => _testing = true);
+    final api = ref.read(apiProvider);
+    final url = api.baseUrl;
+    String title = '连接失败';
+    String body = '';
+    try {
+      final data = await api.health();
+      title = '连接成功';
+      body = '地址：$url\n\n服务：${data['service'] ?? '未知'}\n服务器时间：${data['time'] ?? ''}';
+    } catch (e) {
+      title = '连接失败';
+      body = '地址：$url\n\n${friendlyError(e, url)}';
+    }
+    if (!mounted) return;
+    setState(() => _testing = false);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('知道了')),
+        ],
+      ),
+    );
   }
 
   void _toast(String msg) =>
@@ -169,7 +206,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 child: TextButton.icon(
                   onPressed: () => setState(() => _showServer = !_showServer),
                   icon: const Icon(Icons.settings_ethernet_rounded, size: 15),
-                  label: const Text('服务器地址'),
+                  label: const Text('服务器地址（连不上点这里）'),
                 ),
               ),
               if (_showServer) ...[
@@ -193,6 +230,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       _toast('服务器地址已保存');
                     },
                     child: const Text('保存地址'),
+                  ),
+                ),
+                const SizedBox(height: Sp.s),
+                SizedBox(
+                  width: double.infinity,
+                  height: Sz.buttonH,
+                  child: OutlinedButton.icon(
+                    onPressed: _testing ? null : _testConnection,
+                    icon: _testing
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.network_check_rounded, size: 16),
+                    label: Text(_testing ? '正在测试…' : '测试连接'),
                   ),
                 ),
                 const SizedBox(height: Sp.s),

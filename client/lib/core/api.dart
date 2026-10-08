@@ -63,6 +63,10 @@ class ApiClient {
     await _dio.delete(path);
   }
 
+  /// 健康检查（/health 不带 /api 前缀，返回体里 code=0 时 _unwrap 会直接给出 data）
+  /// 登录页的「测试连接」按钮用它：连不上时立刻告诉用户是地址错、服务没开还是网络不通
+  Future<Map<String, dynamic>> health() => get<Map<String, dynamic>>('/health');
+
   dynamic _unwrap(dynamic body) {
     if (body is Map && body.containsKey('code')) {
       if (body['code'] == 0) return body['data'];

@@ -1,5 +1,35 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/api.dart';
+
+/// 把网络异常翻译成人话。
+/// 用户是普通手机用户，看到「DioException connectionError」只会更懵，
+/// 所以这里统一换成「先查什么」的检查清单。
+String friendlyError(Object e, String baseUrl) {
+  if (e is DioException) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return '连接超时（$baseUrl）\n请检查：① 电脑上的服务窗口还开着吗 ② 手机和电脑是不是同一个 Wi-Fi ③ 地址对不对';
+      case DioExceptionType.connectionError:
+        return '连不上服务器（$baseUrl）\n请检查：① 电脑上的服务窗口还开着吗 ② 手机和电脑是不是同一个 Wi-Fi ③ 地址是不是填错了';
+      case DioExceptionType.badResponse:
+        final code = e.response?.statusCode;
+        if (code == 401) return '登录态已失效，请重新登录';
+        if (code == 403) return '没有权限（403）';
+        if (code == 404) return '接口不存在（404），服务器版本可能不匹配';
+        return '服务器返回异常（HTTP $code）';
+      default:
+        break;
+    }
+  }
+  // 后端统一返回 {code, message}：_unwrap 会把它包成 DioException(error: message)
+  final s = e.toString();
+  final idx = s.indexOf('error:');
+  final msg = idx >= 0 ? s.substring(idx + 6).trim() : '';
+  return msg.isNotEmpty ? msg : '请求失败，请检查网络与服务器地址';
+}
 
 /// 登录态
 class AuthState {
@@ -8,6 +38,8 @@ class AuthState {
   final Map<String, dynamic>? user;
   final Map<String, dynamic>? settings;
   final String? error;
+  /// 成功提示语（登录/注册成功后给个明确反馈，别让用户点了没反应以为失败）
+  final String? success;
 
   AuthState({
     this.loading = true,
@@ -15,6 +47,7 @@ class AuthState {
     this.user,
     this.settings,
     this.error,
+    this.success,
   });
 
   bool get isAdmin => user?['role'] == 'ADMIN';
@@ -50,9 +83,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         loggedIn: true,
         user: Map<String, dynamic>.from(me['user'] ?? {}),
         settings: me['settings'] == null ? null : Map<String, dynamic>.from(me['settings']),
+        success: '登录成功',
       );
     } catch (e) {
-      state = AuthState(loading: false, loggedIn: false, error: _msg(e));
+      state = AuthState(loading: false, loggedIn: false, error: friendlyError(e, _api.baseUrl));
     }
   }
 
@@ -66,9 +100,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         loggedIn: true,
         user: Map<String, dynamic>.from(me['user'] ?? {}),
         settings: me['settings'] == null ? null : Map<String, dynamic>.from(me['settings']),
+        success: '注册成功，已自动登录',
       );
     } catch (e) {
-      state = AuthState(loading: false, loggedIn: false, error: _msg(e));
+      state = AuthState(loading: false, loggedIn: false, error: friendlyError(e, _api.baseUrl));
     }
   }
 
@@ -78,12 +113,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> refresh() async => bootstrap();
-
-  String _msg(Object e) {
-    final s = e.toString();
-    final idx = s.indexOf('error:');
-    return idx >= 0 ? s.substring(idx + 6).trim() : '请求失败，请检查网络与服务器地址';
-  }
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
