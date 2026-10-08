@@ -80,12 +80,50 @@ jobs:
           echo '代码检查未通过，已停止打包'
           exit 1
 
-      - name: 构建 APK（release）
+      - name: 构建 APK（release；若失败自动改打 debug，保证一定有安装包）
         working-directory: ./client
-        run: flutter build apk --release
+        run: |
+          RF=0
+          flutter build apk --release > release.log 2>&1 || RF=1
+          echo "RELEASE_FAILED=$RF" >> "$GITHUB_ENV"
+          if [ "$RF" = "1" ]; then
+            echo "release 打包失败，改打 debug 包（同样能安装，只是体积大些）"
+            flutter build apk --debug > debug.log 2>&1 || echo "BUILD_FAILED=1" >> "$GITHUB_ENV"
+            tail -40 debug.log
+          else
+            tail -25 release.log
+          fi
+
+      - name: 打包失败时把日志回写到提交评论
+        if: env.BUILD_FAILED == '1' || env.RELEASE_FAILED == '1'
+        working-directory: ./client
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo '## 打包日志'
+            echo '### release 的编译错误（不截断）'
+            echo '```'
+            grep -E "^[^ ]+\.dart:[0-9]+:[0-9]+: (Error|error)" release.log || echo '（没有 dart 报错行）'
+            echo '```'
+            echo '### release 日志末尾 40 行'
+            echo '```'
+            tail -40 release.log
+            echo '```'
+            if [ -f debug.log ]; then
+              echo '### debug 日志末尾 40 行'
+              echo '```'
+              tail -40 debug.log
+              echo '```'
+            fi
+          } > report.md
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@report.md \
+            || echo '（回写评论失败）'
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: zuot-app-release
-          path: client/build/app/outputs/flutter-apk/app-release.apk
+          name: zuot-app-apk
+          path: |
+            client/build/app/outputs/flutter-apk/app-release.apk
+            client/build/app/outputs/flutter-apk/app-debug.apk
