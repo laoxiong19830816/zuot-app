@@ -30,3 +30,6 @@ Thumbs.db
 server/.env
 client/.dart_tool/
 dist/
+server/data/
+server/node_modules/
+data/

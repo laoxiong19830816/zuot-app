@@ -2,18 +2,21 @@
   "name": "zuot-server",
   "version": "1.0.0",
   "private": true,
-  "description": "日内做T交易系统 · 后端服务（Express + Prisma + 豆包大模型 + 行情服务调度）",
+  "description": "日内做T交易系统 · 后端服务（Express + 文件存储/PostgreSQL 双模式 + 豆包大模型 + 行情服务调度）",
   "main": "src/index.js",
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js",
+    "install:local": "npm install --omit=optional --no-audit --no-fund",
+    "test": "node scripts/test.js && node scripts/test-filestore.js",
+    "test:business": "node scripts/test.js",
+    "test:store": "node scripts/test-filestore.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "seed": "node scripts/seed.js"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -22,7 +25,8 @@
     "node-cron": "^3.0.3",
     "openai": "^4.68.4"
   },
-  "devDependencies": {
+  "optionalDependencies": {
+    "@prisma/client": "^5.22.0",
     "prisma": "^5.22.0"
   },
   "engines": {
