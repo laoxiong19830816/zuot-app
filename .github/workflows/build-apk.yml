@@ -1,7 +1,7 @@
 name: Build Android APK
 
 # 用途：开发电脑是鸿蒙 PC 无法安装 Android SDK 时，用 GitHub Actions 云构建 APK
-# 用法：把代码推送到 GitHub → Actions 自动构建 → 在 Actions 页面下载 app-release.apk
+# 用法：把代码推送到 GitHub → 在 Actions 页面选本工作流 → Run workflow → 下载 zuot-app-release
 
 on:
   push:
@@ -12,6 +12,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,13 +37,48 @@ jobs:
             echo "android/ 已存在，跳过"
           fi
 
+      # ⚠️ flutter create 会顺手生成 test/widget_test.dart，里面引用模板类 MyApp，
+      #    我们项目里没有 → analyze 必然失败。必须删掉（与 analyze.yml 保持同一处理）。
+      - name: 清理自动生成的示例测试
+        working-directory: ./client
+        run: rm -f test/widget_test.dart
+
       - name: 获取依赖
         working-directory: ./client
         run: flutter pub get
 
       - name: 代码检查（有问题就停，别浪费时间打包）
         working-directory: ./client
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.log 2>&1 \
+            || echo "ANALYZE_FAILED=1" >> "$GITHUB_ENV"
+          cat analyze.log
+
+      - name: 把检查错误逐条高亮出来
+        if: always()
+        working-directory: ./client
+        run: |
+          if [ -f analyze.log ]; then
+            grep -E "(^|[[:space:]])(error|ERROR)[[:space:]]+•" analyze.log | head -10 \
+              | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+
+      - name: 判定检查结果
+        if: env.ANALYZE_FAILED == '1'
+        working-directory: ./client
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo '## 打包前检查未通过'
+            echo '```'
+            head -60 analyze.log
+            echo '```'
+          } > report.md
+          gh api -X POST "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@report.md \
+            || echo '（回写评论失败）'
+          echo '代码检查未通过，已停止打包'
+          exit 1
 
       - name: 构建 APK（release）
         working-directory: ./client
