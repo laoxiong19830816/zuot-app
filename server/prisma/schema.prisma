@@ -1,0 +1,288 @@
+// 日内做T交易系统 · 数据模型
+// 金额口径：所有金额/价格一律用「整数分（cents）」存储，禁止浮点，避免账对不上。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AssetType {
+  STOCK
+  ETF
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  DISABLED
+}
+
+enum FlowStatus {
+  PENDING // 完全未对冲
+  PARTIAL // 部分对冲
+  MATCHED // 已全部对冲
+}
+
+enum AnalysisKind {
+  PREOPEN  // 9:24 集合竞价
+  INTRADAY // 盘中每半小时
+  CLOSE    // 15:00 收盘
+  REVIEW   // 盘后复盘（用户手动触发）
+  STOCK    // 单票专项分析
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  nickname     String?
+  role         UserRole @default(USER)
+  // ACTIVE / SUSPENDED（被管理员停用）
+  status       String   @default("ACTIVE")
+  aiDailyLimit   Int      @default(20)
+  aiMonthlyLimit Int      @default(400)
+  inviteCodeUsed String?
+  createdAt    DateTime @default(now())
+  lastLoginAt  DateTime?
+
+  settings  UserSettings?
+  positions Position[]
+  flows     TradeFlow[]
+  pairs     HedgePair[]
+  analyses  AiAnalysis[]
+  plans     Plan[]
+  reviews   Review[]
+  usages    AiUsageLog[]
+  auditLogs AdminAuditLog[] @relation("adminOperator")
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ---- 股票费率 ----
+  stockCommissionRate     Float @default(0.000074) // 万0.74
+  stockMinCommissionCents Int   @default(0)        // 免五 = 0；合规口径 = 500（5元）
+  stampTaxRate            Float @default(0.0005)   // 卖出 0.05%
+  transferFeeRate         Float @default(0.00001)  // 双向 0.001%
+
+  // ---- ETF 费率（免印花税、免过户费）----
+  etfCommissionRate     Float @default(0.00005) // 万0.5
+  etfMinCommissionCents Int   @default(0)
+
+  // 合规口径对比开关：打开后按「不足5元按5元」计算
+  complianceMode Boolean @default(false)
+
+  // ---- 风险规则 ----
+  maxTradePerDay        Int   @default(6)      // 当日最多做T次数
+  maxLossStreak         Int   @default(3)      // 连亏几次触发冷静
+  singleStopLossCents   Int   @default(-20000) // 单笔止损线（分），默认 -200 元
+  pendingMaxDays        Int   @default(5)      // 挂单最长等待交易日
+  positionLimitPct      Int   @default(40)     // 单票市值占比上限
+  feeErosionAlertPct    Int   @default(30)     // 费用/毛利 超此比例告警
+
+  // ---- AI 开关 ----
+  aiEnablePreopen  Boolean @default(true)
+  aiEnableIntraday Boolean @default(true)
+  aiEnableClose    Boolean @default(true)
+}
+
+model Position {
+  id       String    @id @default(cuid())
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code     String
+  name     String
+  type     AssetType @default(STOCK)
+
+  baseQty      Int @default(0) // 底仓股数
+  availableQty Int @default(0) // 可用股数（昨仓，决定今天能卖多少）
+
+  // 价格单位 = 厘（0.001 元），ETF 报价精度为 0.001 元，用「分」会算错做T盈亏
+  costPriceMills    Int @default(0) // 当前成本价（做T收益已冲减）
+  initialCostMills  Int @default(0) // 初始成本价（用于对比做T效果）
+  realizedProfitCents Int @default(0) // 累计已实现做T净收益（单位：分）
+
+  lastPriceMills Int? // 最近一次行情价（定时任务回写，单位：厘）
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  flows TradeFlow[]
+  @@unique([userId, code])
+  @@index([userId])
+}
+
+model TradeFlow {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positionId String?
+  position   Position?  @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  code       String
+  side       TradeSide
+
+  priceMills Int // 成交单价，单位：厘（0.001 元）
+  qty        Int
+  // 剩余未对冲数量：>0 即进入「未对冲挂单池」
+  remainingQty Int
+
+  amountCents      Int // 成交额，单位：分
+  commissionCents  Int
+  stampTaxCents    Int
+  transferFeeCents Int
+  totalFeeCents    Int
+
+  tradedAt DateTime
+  note     String?
+  status   FlowStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  buyPairs  HedgePair[] @relation("pairBuyFlow")
+  sellPairs HedgePair[] @relation("pairSellFlow")
+
+  @@index([userId, code, tradedAt])
+  @@index([userId, status])
+}
+
+model HedgePair {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String
+
+  buyFlowId  String
+  buyFlow    TradeFlow @relation("pairBuyFlow", fields: [buyFlowId], references: [id])
+  sellFlowId String
+  sellFlow   TradeFlow @relation("pairSellFlow", fields: [sellFlowId], references: [id])
+
+  qty            Int
+  buyPriceMills  Int // 买价，单位：厘
+  sellPriceMills Int // 卖价，单位：厘
+
+  grossProfitCents Int // 毛利 = (卖价-买价)*股数，单位：分
+  totalFeeCents    Int // 双边分摊费用
+  netProfitCents   Int // 净收益
+  returnRate       Float @default(0)
+
+  openDate  DateTime // 开仓日
+  hedgeDate DateTime // 对冲日 = 收益归属日（统计口径以本字段为准）
+
+  createdAt DateTime @default(now())
+  @@index([userId, hedgeDate])
+}
+
+model AiAnalysis {
+  id      String       @id @default(cuid())
+  userId  String
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind    AnalysisKind
+  code    String?      // 单票分析时有值；全仓分析为 null
+  title   String
+  summary String       // 一句话结论（列表展示）
+  content String       // 完整正文（Markdown）
+  model   String
+
+  // 本次分析引用的行情快照，用于事后核对与命中率回测
+  dataSnapshot Json?
+  tokensIn     Int    @default(0)
+  tokensOut    Int    @default(0)
+  success      Boolean @default(true)
+  errorMsg     String?
+
+  // 命中率回测：后续由定时任务回填
+  hitEvaluated Boolean @default(false)
+  hitResult    String? // HIT / MISS / FLAT
+  hitNote      String?
+
+  createdAt DateTime @default(now())
+  @@index([userId, kind, createdAt])
+}
+
+model Plan {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code   String
+  date   DateTime
+
+  // 正T（先买后卖）/ 倒T（先卖后买）/ 不做
+  direction            String
+  buyTriggerPriceMills Int? // 单位：厘
+  sellTargetPriceMills Int? // 单位：厘
+  stopLossPriceMills   Int? // 单位：厘
+  qty                  Int?
+  maxTimes             Int    @default(2)
+  reason               String?
+
+  createdAt DateTime @default(now())
+  @@index([userId, date])
+}
+
+model Review {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime
+
+  aiContent       String? // AI 生成的复盘正文
+  executedPlan    Boolean @default(false)
+  deviationReason String?
+  // 失误类型标签，逗号分隔：卖飞/接飞刀/犹豫错过/过度交易/追高/恐慌
+  mistakeTags String?
+  emotion     String?
+  improvement String?
+
+  createdAt DateTime @default(now())
+  @@index([userId, date])
+}
+
+model InviteCode {
+  id         String    @id @default(cuid())
+  code       String    @unique
+  maxUses    Int       @default(1)
+  usedCount  Int       @default(0)
+  expiresAt  DateTime?
+  createdBy  String?
+  // 手动停用后即使未过期、未用完也不可再注册（用于紧急收回）
+  disabled   Boolean   @default(false)
+  // 备注：发给谁 / 用途，便于管理
+  note       String?
+  createdAt  DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
+model AiUsageLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  model     String
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model AdminAuditLog {
+  id       String   @id @default(cuid())
+  adminId  String
+  admin    User     @relation("adminOperator", fields: [adminId], references: [id])
+  action   String
+  targetId String?
+  detail   String?
+  createdAt DateTime @default(now())
+}

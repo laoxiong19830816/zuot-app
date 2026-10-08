@@ -1,0 +1,28 @@
+name: zuot_client
+description: 做T管家 · 日内做T交易管理 App（Android + 鸿蒙，Flutter-OH）
+publish_to: 'no'
+version: 1.0.0+1
+
+environment:
+  # 上限放宽到 5.0.0：GitHub Actions 装的是最新 Flutter，
+  # 写死 <4.0.0 会导致将来 Dart 出 4.0 时连依赖都装不上、检查直接跑不起来。
+  sdk: '>=3.4.0 <5.0.0'
+  flutter: '>=3.22.0'
+
+# ⚠️ 依赖铁律：只使用纯 Dart 包，不引入含原生代码的插件（否则鸿蒙端需额外适配）
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1      # 状态管理（纯 Dart）
+  dio: ^5.4.0                    # 网络（纯 Dart）
+  shared_preferences: ^2.2.3     # 本地缓存登录态与服务器地址
+  fl_chart: ^0.68.0              # 图表（纯 Dart 自绘，鸿蒙免适配）
+  intl: ^0.19.0                  # 数字/日期格式化
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

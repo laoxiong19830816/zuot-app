@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: zuot-db
+    restart: always
+    environment:
+      POSTGRES_USER: zuot
+      POSTGRES_PASSWORD: zuot_pwd
+      POSTGRES_DB: zuot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U zuot']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 行情服务（Python + AkShare），供豆包 Tool Call 取真实行情
+  quote:
+    build:
+      context: ./server/quote
+    container_name: zuot-quote
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - '8620:8620'
+
+  app:
+    build:
+      context: ./server
+    container_name: zuot-app
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      quote:
+        condition: service_started
+    # 统一从 server/.env 读取全部配置（ARK_API_KEY / JWT_SECRET / SCHEDULER_ENABLED / 注册模式…）
+    # 改配置只需改 server/.env 一个地方，不用再动本文件
+    env_file:
+      - ./server/.env
+    # 仅覆盖「容器内网地址」这类必须与 .env 不同的项
+    # 注意：environment 优先级高于 env_file，此处同名的值会覆盖 .env
+    environment:
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      PORT: '8080'
+      DATABASE_URL: postgresql://zuot:zuot_pwd@db:5432/zuot?schema=public
+      QUOTE_SERVICE_URL: http://quote:8620
+    ports:
+      - '8080:8080'
+    command: >
+      sh -c "npx prisma migrate deploy && node src/index.js"
+
+volumes:
+  pgdata:

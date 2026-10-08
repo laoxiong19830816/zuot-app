@@ -1,0 +1,57 @@
+name: Flutter 代码检查
+
+# 用途：开发电脑是鸿蒙 PC（装不了 Flutter SDK）时，
+#      把代码推到 GitHub，让 GitHub 的服务器免费帮我们跑语法与类型检查。
+#
+# 你什么都不用装，推完代码等 1~2 分钟，来这个页面看结果：
+#   https://github.com/<你的用户名>/<仓库名>/actions
+#   绿勾 ✅ = 代码没问题；红叉 ❌ = 有错，点进去看日志
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: 语法与类型检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter（GitHub 服务器自带，无需你操作）
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 显示版本（方便排查）
+        run: flutter --version
+
+      - name: 补齐安卓平台目录（项目里只有 lib/ 和 pubspec.yaml，缺 android/）
+        # flutter create 在已有项目上是「补齐」不是「覆盖」，不会动你的 lib/ 和 pubspec.yaml
+        working-directory: ./client
+        run: |
+          if [ ! -d android ]; then
+            flutter create --platforms=android --org com.zuot --project-name zuot_client .
+          else
+            echo "android/ 已存在，跳过"
+          fi
+
+      - name: 拉取依赖包
+        working-directory: ./client
+        run: flutter pub get
+
+      - name: 代码检查
+        # --no-fatal-infos / --no-fatal-warnings：
+        # 只把「真错误」（写了不存在的变量、类型对不上）判为失败，
+        # 代码风格类的小提示不算失败，避免一次冒出几百条吓人
+        working-directory: ./client
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: 尝试编译一遍（验证真能跑起来，不产出安装包）
+        working-directory: ./client
+        run: flutter build apk --debug
