@@ -190,6 +190,7 @@ case "$REMOTE_URL" in
 esac
 
 _PATH=$(printf '%s' "$REMOTE_URL" | sed 's|^https\?://||; s|\.git$||')
+GH_HOST=$(printf '%s' "$_PATH" | cut -d/ -f1)
 GH_USER=$(printf '%s' "$_PATH" | cut -d/ -f2)
 GH_REPO=$(printf '%s' "$_PATH" | cut -d/ -f3)
 
@@ -223,21 +224,27 @@ if git push -u origin "$BRANCH"; then
   info "推送成功！"
 else
   die "推送失败。按顺序排查：
-    1) 仓库还没在 GitHub 上建。去 https://github.com/new 建一个，
-       名字填 ${GH_REPO}，选 Private，下面三个选项都别勾。
-    2) 地址拼错了（要跟你仓库页面 Code 按钮里那行完全一致）。
-    3) 要 Personal Access Token（GitHub 早就不认普通密码了）：
-       GitHub 头像 -> Settings -> Developer settings -> Personal access tokens
-       -> Tokens (classic) -> Generate new token -> 勾 repo -> 生成后复制 ghp_xxx
+    1) 仓库还没建。去 https://${GH_HOST}/new 建一个，
+       名字填 ${GH_REPO}，选 Private（私有），下面三个选项都别勾。
+    2) 地址拼错了（要跟你仓库页面 Code / 克隆 按钮里那行完全一致）。
+    3) 要令牌（PAT）而不是登录密码：
+       GitHub：头像 -> Settings -> Developer settings -> Personal access tokens
+               -> Tokens (classic) -> Generate new token -> 勾 repo -> 复制 ghp_xxx
+       Gitee ：头像 -> 设置 -> 私人令牌 -> 生成新令牌 -> 勾 projects -> 复制
        然后依次执行：
-         git remote set-url origin https://<token>@github.com/${GH_USER}/${GH_REPO}.git
+         git remote set-url origin https://<令牌>@${GH_HOST}/${GH_USER}/${GH_REPO}.git
          git push -u origin ${BRANCH}"
 fi
+
+case "$GH_HOST" in
+  *gitee.com) NEXT_URL="https://gitee.com/${GH_USER}/${GH_REPO}/pipelines" ;;
+  *)          NEXT_URL="https://${GH_HOST}/${GH_USER}/${GH_REPO}/actions" ;;
+esac
 
 cat <<EOF
 
 下一步：
-  1. 打开 https://github.com/${GH_USER}/${GH_REPO}/actions
+  1. 打开 ${NEXT_URL}
   2. 看「Flutter 代码检查」：绿勾=通过，红叉=有错（把红色那几行复制给我）
   3. 绿勾后点左侧「Build Android APK」-> 右上角 Run workflow -> 约 5 分钟
      下载 zuot-app-release -> app-release.apk，传到手机安装
