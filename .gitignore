@@ -29,3 +29,4 @@ Thumbs.db
 *.log
 server/.env
 client/.dart_tool/
+dist/
