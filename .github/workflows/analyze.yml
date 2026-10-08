@@ -41,6 +41,13 @@ jobs:
             echo "android/ 已存在，跳过"
           fi
 
+      # ⚠️ 关键：flutter create 会顺手生成 test/widget_test.dart，
+      #    里面引用的是模板类 MyApp（我们项目里没有），会让检查必然失败。
+      #    我们目前不写单元测试，直接删掉它。
+      - name: 清理自动生成的示例测试（引用了不存在的模板类）
+        working-directory: ./client
+        run: rm -f test/widget_test.dart
+
       - name: 拉取依赖包
         working-directory: ./client
         run: flutter pub get
@@ -50,8 +57,31 @@ jobs:
         # 只把「真错误」（写了不存在的变量、类型对不上）判为失败，
         # 代码风格类的小提示不算失败，避免一次冒出几百条吓人
         working-directory: ./client
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings > analyze.log 2>&1 \
+            || echo "ANALYZE_FAILED=1" >> "$GITHUB_ENV"
+          cat analyze.log
+
+      # 把每一条错误单独标出来，这样在 Actions 页面顶部就能直接看到，
+      # 不用点进长长的日志里翻
+      - name: 把错误逐条高亮出来
+        if: always()
+        working-directory: ./client
+        run: |
+          if [ -f analyze.log ]; then
+            grep -E " • (error|ERROR) • |: error: |Error: " analyze.log | head -10 \
+              | while IFS= read -r line; do
+                  echo "::error::$line"
+                done
+          fi
+
+      - name: 判定检查结果
+        if: env.ANALYZE_FAILED == '1'
+        run: |
+          echo "代码检查未通过，请看上面的错误条目"
+          exit 1
 
       - name: 尝试编译一遍（验证真能跑起来，不产出安装包）
+        if: always()
         working-directory: ./client
         run: flutter build apk --debug
