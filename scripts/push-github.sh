@@ -243,6 +243,7 @@ cat <<EOF
      打开 https://github.com/settings/tokens
      -> Generate new token (classic)
      -> 勾第一个大项 repo
+     -> ⚠️ 再勾上 workflow（本项目带 .github/workflows，没这个权限会被拒）
      -> 拉到底 Generate token -> 复制 ghp_ 开头那串（只显示一次，先粘记事本）
 
    ⚠️ 打字时屏幕不显示任何字符，像卡住了 —— 这是正常的，粘完直接回车。
@@ -253,8 +254,37 @@ cat <<EOF
 EOF
 
 info "推送到 origin/${BRANCH} …"
-if git push -u origin "$BRANCH"; then
+
+# 把推送输出存到临时文件：既能原样显示，又能在失败时精确判断原因
+PUSH_LOG="${TMPDIR:-/tmp}/zuot-push-$$.log"
+: > "$PUSH_LOG" 2>/dev/null || PUSH_LOG="./.zuot-push.log"
+PUSH_RC=0
+git push -u origin "$BRANCH" > "$PUSH_LOG" 2>&1 || PUSH_RC=$?
+cat "$PUSH_LOG"
+
+if [ "$PUSH_RC" -eq 0 ]; then
   info "推送成功！"
+  rm -f "$PUSH_LOG" 2>/dev/null || true
+elif grep -qi "workflow" "$PUSH_LOG" 2>/dev/null; then
+  rm -f "$PUSH_LOG" 2>/dev/null || true
+  die "推送被拒：令牌缺【workflow】权限。
+
+  项目里带 .github/workflows/（云端自动检查 + 打包的配置），
+  GitHub 规定：要改动这些文件，令牌必须额外勾上 workflow。
+
+  怎么办（2 分钟，二选一）：
+
+  【推荐】重新生成一个令牌，勾两个：repo + workflow
+     1) 打开 https://${GH_HOST}/settings/tokens
+     2) 点你刚生成的那个令牌 -> Regenerate token，或者删掉重新 Generate new token (classic)
+     3) 勾 repo，再往下找，勾 workflow
+     4) Generate token -> 复制新的 ghp_ 开头那串
+     5) 回到终端重跑本脚本，用户名不变，密码栏粘【新令牌】
+
+  【备选】不想折腾令牌，就先不传 workflow 文件
+     git rm -r --cached .github/workflows && git commit -m 'chore: 暂不上传 CI 配置'
+     然后再跑本脚本。
+     ⚠️ 这样推上去后不会自动跑云端检查和打包，只相当于把代码备份到网上。"
 else
   if command -v curl >/dev/null 2>&1 && ! curl -s -o /dev/null -m 12 "https://${GH_HOST}/" 2>/dev/null; then
     die "推送失败：连不上 ${GH_HOST}。
@@ -273,9 +303,12 @@ else
        那样会看到 remote: No anonymous write access. —— 重新跑，把用户名和令牌填上。
     2) 密码栏必须填【令牌】而不是登录密码。
        GitHub：头像 -> Settings -> Developer settings -> Personal access tokens
-               -> Tokens (classic) -> Generate new token -> 勾 repo -> 复制 ghp_xxx
+               -> Tokens (classic) -> Generate new token -> 勾 repo + workflow -> 复制 ghp_xxx
        Gitee ：头像 -> 设置 -> 私人令牌 -> 生成新令牌 -> 勾 projects -> 复制
-    3) 令牌是不是没勾权限？GitHub 要勾 repo，Gitee 要勾 projects。
+    3) 令牌是不是没勾权限？GitHub 至少勾 repo，
+       项目带 .github/workflows 时还要勾 workflow，Gitee 要勾 projects。
+       ⚠️ 只勾 repo 会报：refusing to allow a Personal Access Token
+          to create or update workflow ... without workflow scope
     4) 仓库地址对不对？（要跟仓库页面 Code / 克隆 按钮里那行完全一致）
     5) 实在搞不定交互提示，可以把令牌拼进地址直接推：
          git remote set-url origin https://<令牌>@${GH_HOST}/${GH_USER}/${GH_REPO}.git
