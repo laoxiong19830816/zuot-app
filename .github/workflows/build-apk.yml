@@ -43,6 +43,14 @@ jobs:
         working-directory: ./client
         run: rm -f test/widget_test.dart
 
+      # ⚠️ 关键：flutter create 生成的 main/AndroidManifest.xml 【没有联网权限】
+      #    （INTERNET 只加在 debug/profile 的 manifest 里），release 包装到真机后
+      #    所有请求都会失败，界面只显示「请求失败，请检查网络与服务器地址」。
+      #    同时 Android 9+ 默认禁明文 HTTP，必须显式放开 usesCleartextTraffic，
+      #    否则连 http://192.168.x.x:8080 这种局域网地址会被系统直接拒绝。
+      - name: 打通网络权限（联网 + 允许明文 HTTP）
+        run: python3 scripts/patch-android-manifest.py client/android/app/src/main/AndroidManifest.xml
+
       - name: 获取依赖
         working-directory: ./client
         run: flutter pub get

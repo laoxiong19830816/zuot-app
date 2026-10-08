@@ -52,6 +52,11 @@ jobs:
         working-directory: ./client
         run: rm -f test/widget_test.dart
 
+      # 与 build-apk.yml 保持同一处理：补联网权限 + 放开明文 HTTP。
+      # 不放开的话 release 包装到真机后连不上局域网后端，会误判成「后端没开」。
+      - name: 打通网络权限（联网 + 允许明文 HTTP）
+        run: python3 scripts/patch-android-manifest.py client/android/app/src/main/AndroidManifest.xml
+
       - name: 拉取依赖包
         working-directory: ./client
         run: flutter pub get
