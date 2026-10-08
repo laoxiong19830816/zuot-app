@@ -2,7 +2,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/api.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../providers.dart';
@@ -132,11 +131,12 @@ class _DailyChart extends ConsumerWidget {
                       barGroups: spots,
                       gridData: const FlGridData(show: false),
                       borderData: FlBorderData(show: false),
+                      // fl_chart 的参数名是 leftTitles/rightTitles/... 不是 left/right/...
                       titlesData: const FlTitlesData(
-                        left: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
-                        right: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        top: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        bottom: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
+                        rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       ),
                     ),
                   ),

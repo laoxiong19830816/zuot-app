@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/api.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../core/tokens.dart';

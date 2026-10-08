@@ -25,3 +25,7 @@ pgdata/
 # 系统
 .DS_Store
 Thumbs.db
+.workbuddy/
+*.log
+server/.env
+client/.dart_tool/

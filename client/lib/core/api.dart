@@ -40,24 +40,27 @@ class ApiClient {
   }
 
   // ---------- 通用 ----------
-  Future<dynamic> get(String path, {Map<String, dynamic>? params}) async {
+  // 这三个方法都带泛型 T：
+  // 调用处写法 Future<List<dynamic>> xxx() => get('/api/xxx');
+  // Dart 会根据声明的返回类型自动推断 T = List<dynamic>，
+  // 否则 get 只能返回 Future<dynamic>，编译器会报「类型对不上」。
+  Future<T> get<T>(String path, {Map<String, dynamic>? params}) async {
     final res = await _dio.get(path, queryParameters: params);
-    return _unwrap(res.data);
+    return _unwrap(res.data) as T;
   }
 
-  Future<dynamic> post(String path, {dynamic data}) async {
+  Future<T> post<T>(String path, {dynamic data}) async {
     final res = await _dio.post(path, data: data);
-    return _unwrap(res.data);
+    return _unwrap(res.data) as T;
   }
 
-  Future<dynamic> put(String path, {dynamic data}) async {
+  Future<T> put<T>(String path, {dynamic data}) async {
     final res = await _dio.put(path, data: data);
-    return _unwrap(res.data);
+    return _unwrap(res.data) as T;
   }
 
-  Future<dynamic> del(String path) async {
-    final res = await _dio.delete(path);
-    return _unwrap(res.data);
+  Future<void> del(String path) async {
+    await _dio.delete(path);
   }
 
   dynamic _unwrap(dynamic body) {
@@ -88,31 +91,37 @@ class ApiClient {
     return Map<String, dynamic>.from(data);
   }
 
-  Future<Map<String, dynamic>> me() async => Map<String, dynamic>.from(await get('/api/auth/me'));
+  Future<Map<String, dynamic>> me() => get<Map<String, dynamic>>('/api/auth/me');
 
   Future<void> logout() => _prefs.remove('token');
 
-  Future<void> updateSettings(Map<String, dynamic> patch) => put('/api/auth/settings', data: patch);
+  Future<void> updateSettings(Map<String, dynamic> patch) async {
+    await put('/api/auth/settings', data: patch);
+  }
 
   // ---------- 持仓 ----------
   Future<List<dynamic>> positions() => get('/api/positions');
 
-  Future<void> addPosition(Map<String, dynamic> data) => post('/api/positions', data: data);
+  Future<void> addPosition(Map<String, dynamic> data) async {
+    await post('/api/positions', data: data);
+  }
 
   /// 批量导入持仓：mode = merge（默认，已存在则更新）/ replace（清空后重建）
   Future<Map<String, dynamic>> importPositions(List<Map<String, dynamic>> items, {String mode = 'merge'}) =>
-      post('/api/positions/import', data: {'items': items, 'mode': mode}) as Future<Map<String, dynamic>>;
+      post<Map<String, dynamic>>('/api/positions/import', data: {'items': items, 'mode': mode});
 
-  Future<void> updatePosition(String id, Map<String, dynamic> data) => put('/api/positions/$id', data: data);
+  Future<void> updatePosition(String id, Map<String, dynamic> data) async {
+    await put('/api/positions/$id', data: data);
+  }
 
   Future<void> deletePosition(String id) => del('/api/positions/$id');
 
   // ---------- 交易 ----------
   Future<Map<String, dynamic>> previewTrade(Map<String, dynamic> data) =>
-      post('/api/trades/preview', data: data) as Future<Map<String, dynamic>>;
+      post<Map<String, dynamic>>('/api/trades/preview', data: data);
 
   Future<Map<String, dynamic>> addTrade(Map<String, dynamic> data) =>
-      post('/api/trades', data: data) as Future<Map<String, dynamic>>;
+      post<Map<String, dynamic>>('/api/trades', data: data);
 
   Future<List<dynamic>> trades({String? code, String? status, String? date}) =>
       get('/api/trades', params: {'code': code, 'status': status, 'date': date});
@@ -134,21 +143,18 @@ class ApiClient {
   Future<dynamic> aiDetail(String id) => get('/api/ai/$id');
 
   Future<Map<String, dynamic>> refreshAi(String kind, {String? code}) =>
-      post('/api/ai/refresh', data: {'kind': kind, 'code': code}) as Future<Map<String, dynamic>>;
+      post<Map<String, dynamic>>('/api/ai/refresh', data: {'kind': kind, 'code': code});
 
-  Future<Map<String, dynamic>> review() =>
-      post('/api/ai/review', data: {}) as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> review() => post<Map<String, dynamic>>('/api/ai/review', data: {});
 
   Future<dynamic> aiUsage() => get('/api/ai/usage');
 
   Future<dynamic> hitRate() => get('/api/ai/hit-rate');
 
   // ---------- 统计 / 风险 ----------
-  Future<Map<String, dynamic>> todayStats() =>
-      get('/api/stats/today') as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> todayStats() => get<Map<String, dynamic>>('/api/stats/today');
 
-  Future<Map<String, dynamic>> overview() =>
-      get('/api/stats/overview') as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> overview() => get<Map<String, dynamic>>('/api/stats/overview');
 
   Future<List<dynamic>> byCode() => get('/api/stats/by-code');
 
@@ -156,21 +162,24 @@ class ApiClient {
 
   Future<List<dynamic>> plans() => get('/api/stats/plans');
 
-  Future<Map<String, dynamic>> risk() => get('/api/risk') as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> risk() => get<Map<String, dynamic>>('/api/risk');
 
   // ---------- 管理员 ----------
   Future<List<dynamic>> adminUsers() => get('/api/admin/users');
 
   Future<dynamic> adminOverview() => get('/api/admin/overview');
 
-  Future<void> setUserStatus(String id, String status, {String? reason}) =>
-      post('/api/admin/users/$id/status', data: {'status': status, 'reason': reason});
+  Future<void> setUserStatus(String id, String status, {String? reason}) async {
+    await post('/api/admin/users/$id/status', data: {'status': status, 'reason': reason});
+  }
 
-  Future<void> setUserQuota(String id, {int? daily, int? monthly}) =>
-      post('/api/admin/users/$id/quota', data: {'daily': daily, 'monthly': monthly});
+  Future<void> setUserQuota(String id, {int? daily, int? monthly}) async {
+    await post('/api/admin/users/$id/quota', data: {'daily': daily, 'monthly': monthly});
+  }
 
-  Future<void> setUserRole(String id, String role) =>
-      post('/api/admin/users/$id/role', data: {'role': role});
+  Future<void> setUserRole(String id, String role) async {
+    await post('/api/admin/users/$id/role', data: {'role': role});
+  }
 
   // ---------- 邀请码 ----------
   Future<List<dynamic>> inviteCodes() => get('/api/admin/invite-codes');
@@ -186,12 +195,13 @@ class ApiClient {
   Future<dynamic> toggleInviteCode(String id) => post('/api/admin/invite-codes/$id/toggle');
 
   /// 修改邀请码：note / maxUses / days（days = 0 表示长期有效）
-  Future<void> updateInviteCode(String id, {String? note, int? maxUses, int? days}) =>
-      put('/api/admin/invite-codes/$id', data: {
-        if (note != null) 'note': note,
-        if (maxUses != null) 'maxUses': maxUses,
-        if (days != null) 'days': days,
-      });
+  Future<void> updateInviteCode(String id, {String? note, int? maxUses, int? days}) async {
+    await put('/api/admin/invite-codes/$id', data: {
+      if (note != null) 'note': note,
+      if (maxUses != null) 'maxUses': maxUses,
+      if (days != null) 'days': days,
+    });
+  }
 
   Future<void> deleteInviteCode(String id) => del('/api/admin/invite-codes/$id');
 }
