@@ -219,6 +219,18 @@ if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
   git branch -M "$BRANCH" 2>/dev/null || git branch -m "$BRANCH" 2>/dev/null || true
 fi
 
+# ---------- 11. 连通性预检（先分清"网络问题"和"密码问题"）----------
+if command -v curl >/dev/null 2>&1; then
+  info "检查能不能连上 ${GH_HOST} …"
+  if curl -s -o /dev/null -m 12 "https://${GH_HOST}/" 2>/dev/null; then
+    info "${GH_HOST} 可以访问"
+  else
+    warn "连不上 ${GH_HOST}（网络不通）。这不是你操作错了 —— 国内访问它时通时不通。"
+    warn "可以先等一下再试、或换手机热点。若长期不行，改走 Gitee（见操作手册「办法 4」）。"
+    warn "下面仍然会尝试推送一次，可能失败。"
+  fi
+fi
+
 cat <<EOF
 
 --------------------------------------------------------------
@@ -234,6 +246,7 @@ cat <<EOF
      -> 拉到底 Generate token -> 复制 ghp_ 开头那串（只显示一次，先粘记事本）
 
    ⚠️ 打字时屏幕不显示任何字符，像卡住了 —— 这是正常的，粘完直接回车。
+   ⚠️ 终端里 Ctrl+V 常常无效，请用「右键 -> 粘贴」或 Ctrl+Shift+V。
    ⚠️ 令牌 = 密码。别发给任何人（包括 AI），别写进代码文件。
 --------------------------------------------------------------
 
@@ -243,17 +256,31 @@ info "推送到 origin/${BRANCH} …"
 if git push -u origin "$BRANCH"; then
   info "推送成功！"
 else
-  die "推送失败。按顺序排查：
-    1) 仓库还没建。去 https://${GH_HOST}/new 建一个，
-       名字填 ${GH_REPO}，选 Private（私有），下面三个选项都别勾。
-    2) 地址拼错了（要跟你仓库页面 Code / 克隆 按钮里那行完全一致）。
-    3) 要令牌（PAT）而不是登录密码：
+  if command -v curl >/dev/null 2>&1 && ! curl -s -o /dev/null -m 12 "https://${GH_HOST}/" 2>/dev/null; then
+    die "推送失败：连不上 ${GH_HOST}。
+
+  ⚠️ 这是【网络问题】，不是你操作错了，也不是密码错了。
+     实测这台机器访问 ${GH_HOST} 时通时不通（有时 8~60 秒后超时）。
+
+  怎么办（从易到难）：
+    1) 过几分钟、或换个时间段再跑一次本脚本（深夜 / 清晨通常更通）
+    2) 手机开热点，让电脑连手机的网络，再跑一次 ← 这招常常一试就好
+    3) 一直不行 -> 改走 Gitee（码云）。国内服务器，稳定不抽风。
+       见《代码检查操作手册》的「办法 4：换 Gitee」，有完整步骤。"
+  fi
+  die "推送失败（服务器能连上，所以是【身份凭据】的问题）。按顺序排查：
+    1) 是不是两行都空着直接回车了？
+       那样会看到 remote: No anonymous write access. —— 重新跑，把用户名和令牌填上。
+    2) 密码栏必须填【令牌】而不是登录密码。
        GitHub：头像 -> Settings -> Developer settings -> Personal access tokens
                -> Tokens (classic) -> Generate new token -> 勾 repo -> 复制 ghp_xxx
        Gitee ：头像 -> 设置 -> 私人令牌 -> 生成新令牌 -> 勾 projects -> 复制
-       然后依次执行：
+    3) 令牌是不是没勾权限？GitHub 要勾 repo，Gitee 要勾 projects。
+    4) 仓库地址对不对？（要跟仓库页面 Code / 克隆 按钮里那行完全一致）
+    5) 实在搞不定交互提示，可以把令牌拼进地址直接推：
          git remote set-url origin https://<令牌>@${GH_HOST}/${GH_USER}/${GH_REPO}.git
-         git push -u origin ${BRANCH}"
+         git push -u origin ${BRANCH}
+       （推成功后建议把地址改回来，别让令牌留在电脑上）"
 fi
 
 case "$GH_HOST" in
