@@ -17,6 +17,10 @@ jobs:
   analyze:
     name: 语法与类型检查
     runs-on: ubuntu-latest
+    # 需要写权限才能把检查报告回写到提交评论（只想看网页的话可以不给）
+    permissions:
+      contents: write
+      actions: read
 
     steps:
       - name: 取出代码
@@ -64,15 +68,26 @@ jobs:
 
       # 把每一条错误单独标出来，这样在 Actions 页面顶部就能直接看到，
       # 不用点进长长的日志里翻
+      # 注意 flutter analyze 的原文格式是「  error • 消息 • 文件:行:列 • 规则名」，
+      # error 前面没有「•」，之前写成「 • error • 」导致一条都匹配不到。
       - name: 把错误逐条高亮出来
         if: always()
         working-directory: ./client
         run: |
           if [ -f analyze.log ]; then
-            grep -E " • (error|ERROR) • |: error: |Error: " analyze.log | head -10 \
-              | while IFS= read -r line; do
-                  echo "::error::$line"
-                done
+            HITS=$(grep -cE "(^|[[:space:]])(error|ERROR)[[:space:]]+•" analyze.log || true)
+            echo "匹配到的 error 条数：$HITS"
+            if [ "$HITS" -gt 0 ]; then
+              grep -E "(^|[[:space:]])(error|ERROR)[[:space:]]+•" analyze.log | head -10 \
+                | while IFS= read -r line; do
+                    echo "::error::$line"
+                  done
+            else
+              echo "没匹配到标准 error 行，输出日志末尾供排查："
+              tail -12 analyze.log | while IFS= read -r line; do
+                echo "::error::$line"
+              done
+            fi
           fi
 
       - name: 判定检查结果
@@ -81,7 +96,56 @@ jobs:
           echo "代码检查未通过，请看上面的错误条目"
           exit 1
 
+      # 编译一遍，验证代码真能跑起来（不产出安装包，快）
+      # 编译错误的信息往往比 analyze 更直白，所以同样捕获出来
       - name: 尝试编译一遍（验证真能跑起来，不产出安装包）
+        id: build
         if: always()
         working-directory: ./client
-        run: flutter build apk --debug
+        run: |
+          flutter build apk --debug > build.log 2>&1 \
+            || echo "BUILD_FAILED=1" >> "$GITHUB_ENV"
+          tail -40 build.log
+
+      - name: 把编译错误逐条高亮出来
+        if: always()
+        working-directory: ./client
+        run: |
+          if [ -f build.log ]; then
+            grep -E "^[^ ]+\.dart:[0-9]+:[0-9]+: (Error|error)" build.log | head -10 \
+              | while IFS= read -r line; do
+                  echo "::error::$line"
+                done
+            echo "---- 日志末尾（兜底）----"
+            grep -iE "error|failed|错误" build.log | head -5 \
+              | while IFS= read -r line; do
+                  echo "::error::$line"
+                done
+          fi
+
+      # 把完整日志回写到这条提交的「评论」里。
+      # 好处：GitHub 的 Actions 日志必须登录才能下载，而提交评论在公开仓库里是可读的，
+      #       这样不用开网页也能把错误原文拿到手。
+      - name: 把检查报告回写到提交评论
+        if: always()
+        working-directory: ./client
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo '## 自动检查结果'
+            echo
+            echo '### ① flutter analyze'
+            echo '```'
+            if [ -f analyze.log ]; then head -100 analyze.log; else echo '（没有生成 analyze.log）'; fi
+            echo '```'
+            echo
+            echo '### ② flutter build apk --debug'
+            echo '```'
+            if [ -f build.log ]; then tail -80 build.log; else echo '（没有生成 build.log）'; fi
+            echo '```'
+          } > report.md
+          gh api -X POST \
+            "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -F body=@report.md \
+            || echo '（回写评论失败，不影响检查结果本身）'

@@ -94,7 +94,7 @@ info "安全检查通过：没有密钥文件进入提交范围"
 
 # ---------- 7. 提交 ----------
 if git diff --cached --quiet 2>/dev/null; then
-  warn "没有需要提交的新改动"
+  info "本地文件没有新改动（不用提交）"
 else
   git commit -m "feat: 做T管家 V1（手动触发版）
 
@@ -211,6 +211,17 @@ if git remote get-url origin >/dev/null 2>&1; then
 else
   info "添加远端：$REMOTE_URL"
   git remote add origin "$REMOTE_URL"
+fi
+
+# ---------- 10.5 看看还有多少改动等着传上去 ----------
+if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+  PENDING=$(git log --oneline "origin/$BRANCH..HEAD" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$PENDING" != "0" ]; then
+    info "有 ${PENDING} 个改动等着传上去："
+    git log --oneline "origin/$BRANCH..HEAD" 2>/dev/null | sed 's/^/     /'
+  fi
+else
+  info "远端还没有这个分支，这次是第一次推送"
 fi
 
 # ---------- 11. 推送 ----------
